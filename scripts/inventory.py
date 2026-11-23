@@ -54,6 +54,7 @@ TW_RADIUS = {'rounded-none': '0px', 'rounded-sm': '2px', 'rounded': '4px', 'roun
 TW_TEXT = {'xs': '12px', 'sm': '14px', 'base': '16px', 'lg': '18px', 'xl': '20px', '2xl': '24px', '3xl': '30px', '4xl': '36px', '5xl': '48px', '6xl': '60px', '7xl': '72px', '8xl': '96px', '9xl': '128px'}
 
 THEME_VARS = {}
+THEME_MULTI = {}
 
 def theme_vars(css):
     """(variable, 'light' or 'dark', hex) for every colour custom property, using the block it sits in.
@@ -65,7 +66,7 @@ def theme_vars(css):
         elif ch == '}':
             if stack:
                 sel = stack.pop()
-                dark = any(re.search(r'dark|prefers-color-scheme:\s*dark', s, re.I) for s in stack + [sel])
+                dark = any(re.search(r'dark|prefers-color-scheme:\s*dark', re.sub(r':not\([^)]*\)', '', s), re.I) for s in stack + [sel])
                 for k, v in re.findall(r'(--[A-Za-z0-9_-]+)\s*:\s*(#[0-9a-fA-F]{3,6})\b', buf):
                     out.append((k, 'dark' if dark else 'light', v))
             buf = ''
@@ -87,6 +88,7 @@ def scan(roots):
         css = ''.join(re.findall(r'<style[^>]*>(.*?)</style>', s, flags=re.S)) if p.lower().endswith(('.html', '.htm', '.vue', '.svelte')) else s
         for _v, _th, _hx in theme_vars(css):
             THEME_VARS.setdefault(_v, {})[_th] = norm_hex(_hx)
+            THEME_MULTI.setdefault(_v, {}).setdefault(_th, set()).add(norm_hex(_hx))
         for h in re.findall(r'#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b', css):
             C['color'][norm_hex(h)] += 1
         for v in re.findall(r'border-radius:\s*([0-9.]+(?:px|rem|%))', css):

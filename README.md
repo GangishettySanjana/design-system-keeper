@@ -13,8 +13,9 @@ A Claude skill that pulls a design system out of a real project, decides what is
    - CSS variables and a Tailwind config,
    - an `AGENTS.md` of always-on rules for AI agents.
    - for engineers, `components.json` (one structured record per component) and `tokens.dtcg.json` (Design Tokens format for Style Dictionary and Figma token tools).
-   - for a project that already has its own variable names, a **bridge file** (`--format bridge`) that points the app's names at the tokens without renaming anything, a `--prefix` so token names never clash, and `--rules` to add project-specific rules to the `AGENTS.md`.
-6. **Keeps it in step** (`scripts/check_drift.py`). Compare the saved tokens with the code of several sources (a prototype and the real app), list the differences, link each token to the code variable that holds it, and exit with an error on drift (`--fail`) so it can run before a release.
+   - for a project that already has its own variable names, a **bridge file** (`--format bridge`) that points the app's names at the tokens without renaming anything, a `--prefix` (default `ds-`) so token names never clash with the app's, a `--tokens-css` check that the bridge points only at names that exist, and `--rules` to add project-specific rules to the agents file (named `AGENTS.design-system.md`, so it never overwrites a project's own `AGENTS.md`).
+   - `--format tailwind-css`: an `@theme` block for Tailwind CSS 4 (CSS-first). `--format tailwind` is a JS config for Tailwind 3 and earlier.
+6. **Keeps it in step** (`scripts/check_drift.py`). Compare the saved tokens with the code of several sources (a prototype and the real app), list the differences, link each token to the code variable that holds it, and exit with an error on drift (`--fail`) so it can run before a release. It compares light with light and dark with dark, and reports a variable that is defined more than once with different values, which is how two grays for one name sneak into an app.
 
 ## Install
 
@@ -33,5 +34,6 @@ Upload `design-system-keeper.skill` to Claude (Settings, Skills), or copy this f
 - Colours written as Tailwind classes (for example `bg-emerald-600`) are not read. Dark values in a draft are listed separately, not paired with light ones.
 - `components.json` is read from component pages written as a title, a summary and labelled paragraphs (`**Use.**`, `**Rules.**`). Pages written another way give thinner data.
 - The draft pairs light and dark values only when the CSS declares both (`:root` and a `.dark`, `[data-theme=dark]` or `prefers-color-scheme: dark` block).
+- The bridge only maps colours, and the app's own more specific selectors can still override it. Some duplicate definitions are intentional (for example a website override of a phone value), so a person decides which are mistakes.
 - The drift check compares colours by name and value. It does not yet compare shadows, spacing names or component code.
 - Tested on three projects (a design system with 17 components, a portfolio site and a Next.js app) and in two fresh sessions, and the tests found errors that were fixed. It is not tested on every setup.

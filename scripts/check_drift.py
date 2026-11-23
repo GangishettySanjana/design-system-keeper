@@ -26,6 +26,12 @@ def norm_name(v):
         if v.startswith(p): v = v[len(p):]
     return v
 
+def tokval(tok, th):
+    """The token's value for a theme. A token with a single value applies to light only."""
+    v = tok['value']
+    if isinstance(v, dict): return v.get(th)
+    return v if th == 'light' else None
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('tokens')
@@ -54,7 +60,7 @@ def main():
     print(f'Saved system: {a.tokens} ({len(toks)} colour tokens).\n')
     total_low = 0
     for label, path in src:
-        inv.THEME_VARS.clear()
+        inv.THEME_VARS.clear(); inv.THEME_MULTI.clear()
         C, n, _ = inv.scan([path])
         mu = a.min_uses or (1 if len(C['color']) <= 40 else 3)
         vars_ = inv.code_vars(C, None)
@@ -64,22 +70,38 @@ def main():
         same_name = []
         for var, hexv, _ in vars_:
             nm = norm_name(var)
-            if nm in by_name and hexv not in by_name[nm] and hexv not in ign:
-                same_name.append((var, hexv, nm, by_name[nm]))
             for tokname, vs in by_name.items():
                 if hexv in vs:
                     names[tokname][label].add(var)
                     if nm == tokname: exact[tokname][label].add(var)
+        tokmap = {tok['name']: tok for tok in toks}
+        for var, dd in inv.THEME_MULTI.items():
+            nm = norm_name(var)
+            if nm not in tokmap: continue
+            for th, vals in dd.items():
+                tvl = tokval(tokmap[nm], th)
+                if tvl is None: continue
+                for hv in sorted(vals):
+                    if inv.norm_hex(hv) != inv.norm_hex(tvl) and inv.norm_hex(hv) not in ign:
+                        same_name.append((var + ' (' + th + ')', hv, nm, [tvl.lower()]))
+        multi = []
+        for var, dd in inv.THEME_MULTI.items():
+            for th, vals in dd.items():
+                vals = sorted(v for v in vals if v not in ign)
+                if len(vals) > 1: multi.append((var, th, vals))
         n_new = sum(len(x) for x in new.values())
         low = sum(1 for k in ('color', 'radius', 'font-size', 'spacing') for v, c in C[k].items() if c < mu and (inv.norm_hex(v) if k == 'color' else v) not in tv[k])
         total_low += low
-        drift += n_new + len(same_name)
+        drift += n_new + len(same_name) + len(multi)
         print(f'## {label}  ({n} files)\n')
         print(f'- Checked values used {mu} or more times ({"automatic" if not a.min_uses else "set by --min-uses"}); {low} rarer values were not checked.')
         print(f'- Used in the code but not in the tokens: {n_new} values')
         for k, lst in new.items():
             if lst: print(f'  - {k}: ' + ', '.join(f'{v} x{c}' for v, c in lst[:12]))
-        print(f'- Same name, different value: {len(same_name)}')
+        print(f'- Defined more than once with different values: {len(multi)}  (the app can show two different colours for the same name)')
+        for var, th, vals in multi[:12]:
+            print(f'  - `{var}` in the {th} theme: ' + ', '.join(vals))
+        print(f'- Same name as a token, different value (compared theme by theme): {len(same_name)}')
         for var, hexv, nm, vs in same_name[:15]:
             print(f'  - `{var}` is {hexv} in the code, but token `{nm}` is {", ".join(vs)}')
         print()

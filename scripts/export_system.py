@@ -10,6 +10,7 @@ Usage:
   css       CSS custom properties, with a dark-theme block when the tokens have dark values.
   tailwind  a tailwind.config theme.extend snippet that points at the CSS variables.
   agents    an AGENTS.md of always-on rules for AI agents: the tokens, what each is for, and how to use them.
+  tailwind-css  theme.css: an @theme block for Tailwind CSS 4 (CSS-first). Use `tailwind` only for Tailwind 3 and earlier, which reads a JS config.
   bridge    bridge.css: points the app's own variable names at the tokens (needs linked-tokens.json from check_drift.py --write-names, and --source <label>).
             Add --prefix ds- to css/tailwind/bridge so token names never clash with the app. --rules rules.md adds project rules to the agents file.
   components  components.json: one structured record per component (summary, use, rules, states, tokens used), read from <docs>/components/*/README.md.
@@ -69,7 +70,9 @@ def build_tailwind(t):
 
 def build_bridge(t, source, pfx=''):
     """CSS that points the app's own variable names at the tokens. Only variables that share a token's name AND already hold its value are bridged."""
-    lines = ["/* Bridge: the app's own variable names point at the design system tokens. Load it AFTER the tokens CSS.", "   Only variables that share a token's name and already hold its value are bridged, so the app looks the same. */", ':root {']
+    lines = ["/* Bridge: the app's own variable names point at the design system tokens. Load it AFTER the tokens CSS.", "   Only variables that share a token's name and already hold its value are bridged.",
+               "   It does not guarantee the app looks the same: if the app sets the same name again in a more specific selector",
+               "   (a scoped block or a theme class) that rule still wins. Check in a browser, and see the 'defined more than once' list from check_drift.py. */", ':root {']
     n = 0
     for c in (t.get('color') or {}).get('tokens', []):
         for name in (c.get('code_exact') or {}).get(source, []):
@@ -77,6 +80,31 @@ def build_bridge(t, source, pfx=''):
     lines.append('}')
     if n == 0: lines.insert(2, '/* Nothing to bridge: run check_drift.py with --write-names first, and give the source label. */')
     return '\n'.join(lines) + '\n'
+
+def build_tailwind_css(t):
+    """Tailwind CSS 4 (CSS-first): an @theme block, plus dark overrides for colours. Prefix is not used: Tailwind needs its own --color-*, --radius-* names."""
+    L = ['/* Generated from tokens.json for Tailwind CSS 4. Put it after @import "tailwindcss"; in your main CSS file. */', '@theme {']
+    dark = []
+    for c in (t.get('color') or {}).get('tokens', []):
+        n = slug(c['name'])
+        L.append(f'  --color-{n}: {val(c["value"])};')
+        if isinstance(c['value'], dict) and c['value'].get('dark'):
+            dark.append(f'  --color-{n}: {c["value"]["dark"]};')
+    for r in (t.get('radius') or {}).get('tokens', []):
+        L.append(f'  --{slug(r["name"])}: {r["value"]};')
+    for s in (t.get('shadow') or {}).get('tokens', []):
+        L.append(f'  --{slug(s["name"])}: {s["value"]};')
+    for s in (t.get('spacing') or {}).get('tokens', []):
+        L.append(f'  --spacing-{slug(s["name"])}: {s["value"]};')
+    for k, f in ((t.get('type') or {}).get('families') or {}).items():
+        L.append(f'  --font-{slug(k)}: {f};')
+    for g in (t.get('type') or {}).get('groups', []):
+        for s in g.get('styles', []):
+            L.append(f'  --text-{slug(s["name"])}: {s.get("fontSize")};')
+    L.append('}')
+    if dark:
+        L += ['', '@media (prefers-color-scheme: dark) {', '  :root:not([data-theme="light"]) {'] + ['  ' + d for d in dark] + ['  }', '}', '', ':root[data-theme="dark"] {'] + dark + ['}']
+    return '\n'.join(L) + '\n'
 
 def build_agents(t, title, rules=''):
     L = [f'# {title}: design rules for AI agents', '',
@@ -269,11 +297,12 @@ def find_chrome():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('tokens')
-    ap.add_argument('--format', required=True, choices=['html', 'pdf', 'css', 'tailwind', 'agents', 'components', 'style-dictionary', 'bridge'])
+    ap.add_argument('--format', required=True, choices=['html', 'pdf', 'css', 'tailwind', 'tailwind-css', 'agents', 'components', 'style-dictionary', 'bridge'])
     ap.add_argument('--docs')
     ap.add_argument('--out')
     ap.add_argument('--title')
-    ap.add_argument('--prefix', default='', help='prefix for CSS variable names, for example ds- gives --ds-color-ink, so they never clash with the app')
+    ap.add_argument('--prefix', default='ds-', help="prefix for CSS variable names (default ds-, so --ds-color-ink never clashes with the app's own names). Use --prefix '' for none. The css and bridge exports must use the same prefix.")
+    ap.add_argument('--tokens-css', help='for --format bridge: the tokens CSS you exported; checks that every name the bridge points at exists in it')
     ap.add_argument('--source', help='for --format bridge: the source label used with check_drift.py (for example app)')
     ap.add_argument('--rules', help='for --format agents: a markdown file of project-specific rules to add')
     a = ap.parse_args()
@@ -291,12 +320,22 @@ def main():
         for n in files:
             docs.append((n, open(os.path.join(a.docs, n), encoding='utf-8', errors='ignore').read()))
     f = a.format
-    out = a.out or ('design-system.' + {'html': 'html', 'pdf': 'pdf', 'css': 'css', 'tailwind': 'tailwind.config.js', 'agents': 'AGENTS.md', 'components': 'components.json', 'style-dictionary': 'tokens.dtcg.json', 'bridge': 'bridge.css'}[f])
+    out = a.out or {'html': 'design-system.html', 'pdf': 'design-system.pdf', 'css': 'tokens.css', 'tailwind': 'tailwind.config.js', 'tailwind-css': 'theme.css', 'agents': 'AGENTS.design-system.md', 'components': 'components.json', 'style-dictionary': 'tokens.dtcg.json', 'bridge': 'bridge.css'}[f]
     pfx = a.prefix or ''
     def pre(s):
         return re.sub(r'(?m)^(\s+)--', lambda m: m.group(1) + '--' + pfx, s) if pfx else s
     if f == 'css': open(out, 'w').write(pre(build_css(t)))
-    elif f == 'bridge': open(out, 'w').write(build_bridge(t, a.source or '', pfx))
+    elif f == 'bridge':
+        open(out, 'w').write(build_bridge(t, a.source or '', pfx))
+        if a.tokens_css:
+            defined = set(re.findall(r'(--[A-Za-z0-9_-]+)\s*:', open(a.tokens_css).read()))
+            wanted = set(re.findall(r'var\((--[A-Za-z0-9_-]+)\)', open(out).read()))
+            missing = sorted(wanted - defined)
+            if missing:
+                print('WARNING: the bridge points at names the tokens CSS does not define (usually a different --prefix): ' + ', '.join(missing[:6]))
+                sys.exit(1)
+            print(f'Bridge check passed: all {len(wanted)} names exist in {a.tokens_css}.')
+    elif f == 'tailwind-css': open(out, 'w').write(build_tailwind_css(t))
     elif f == 'tailwind':
         tw = build_tailwind(t)
         tw = re.sub(r'    \w+: \{\n      \n    \},\n', '', tw)
