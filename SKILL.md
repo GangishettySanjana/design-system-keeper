@@ -75,13 +75,18 @@ When the design system is saved and checked, ask how they want it, in one short 
 2. **A page or artifact**: one self-contained page to read, share and keep. Use `--format html`. If they use Claude artifacts, follow `references/design-system-format.md` to publish it as a design system artifact.
 3. **Put it into the code**: tokens as CSS variables (`--format css`), a Tailwind config (`--format tailwind`), and an `AGENTS.md` of always-on rules so AI agents use the real tokens (`--format agents`). Say where each file should go in their project, and let them place it. Never overwrite their existing files without asking.
 
+4. **For engineers**: `--format components` writes `components.json`, one structured record per component (summary, use, rules, states, tokens used) read from the component pages, so tools and AI agents can read what each component is. `--format style-dictionary` writes `tokens.dtcg.json`, the Design Tokens (DTCG) format that Style Dictionary and Figma token tools read, with dark values under `$extensions.mode.dark`.
+
 If they do not say, recommend the PDF or page first (it is safe and changes nothing), then offer the code export. Tell them what you produced and where it is saved.
+
+### 7. Keep it in step
+A design system goes stale the day after it is written, so offer the drift check and say what it does: `python <this-skill>/scripts/check_drift.py <tokens.json> <label=folder> [more sources] --ignore <colours that are not the app's> --write-names linked-tokens.json`. For each source (for example the prototype and the real app) it lists the values used in the code but missing from the tokens, the variables that share a token's name but hold a different value, and which code variable holds each token. Add `--fail` to make it exit with an error when there is drift, so a developer can run it before each release. Report the result in plain words, park each difference for the person, and never change the code or the tokens by yourself.
 
 ## Judgement calls that come up every time
 
 These were found by testing the skill on a small project. Decide them this way so different people get the same result.
 
-- **Linking code names to token names.** Put the code name in the token's usage note ("Code: `--bg`"). That is how the next scan, and a developer, know they are the same thing. The scanner matches variables to tokens by value and flags any with no match.
+- **Linking code names to token names.** Put the code name in the token's usage note ("Code: `--bg`"). That is how the next scan, and a developer, know they are the same thing. The scanner matches variables to tokens by value and flags any with no match. To link a prototype and the real app at once, use `check_drift.py ... --write-names linked-tokens.json`; it stores each token's code variable per source in a `code` field and prefers a variable with the token's own name.
 - **A value used once that nobody confirmed.** Park it. Save an as-built value only when it recurs, or a person confirmed it. Never promote a one-off just because it exists.
 - **Who decided it.** Name the person only if they said it. If a note records a decision with no speaker, attribute it to the document and date ("decided in the review notes, 21 Nov"). Never guess a name.
 - **Retiring a token or rule.** Do not add custom fields to a format. Begin the usage note with "Deprecated, replaced by X on <date>." and add a line to the decisions page. The token stays.

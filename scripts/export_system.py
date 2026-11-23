@@ -10,6 +10,8 @@ Usage:
   css       CSS custom properties, with a dark-theme block when the tokens have dark values.
   tailwind  a tailwind.config theme.extend snippet that points at the CSS variables.
   agents    an AGENTS.md of always-on rules for AI agents: the tokens, what each is for, and how to use them.
+  components  components.json: one structured record per component (summary, use, rules, states, tokens used), read from <docs>/components/*/README.md.
+  style-dictionary  tokens.dtcg.json: design tokens in the DTCG format that Style Dictionary and Figma token tools read (dark values in $extensions.mode.dark).
 
 Standard library only (Chrome is only needed for pdf).
 """
@@ -180,6 +182,69 @@ table{border-collapse:collapse;width:100%;margin:2mm 0;font-size:8.5pt}th{backgr
             + (f'<h2>Shadows</h2>{shd}' if shd else '') + (f'<h2>Layers</h2><ul>{zi}</ul>' if zi else '') + docs_html)
     return f'<!doctype html><html><head><meta charset="utf-8"><title>{e(title)}</title><style>{css}</style></head><body>{body}</body></html>'
 
+def build_components(docs, t):
+    """One structured record per component, read from <docs>/components/<Name>/README.md."""
+    names = set()
+    for key in ('color', 'spacing', 'radius', 'shadow', 'zindex'):
+        names.update(x['name'] for x in (t.get(key) or {}).get('tokens', []))
+    out = []
+    base = os.path.join(docs or '', 'components')
+    if not os.path.isdir(base):
+        return out
+    for d in sorted(os.listdir(base)):
+        rp = os.path.join(base, d, 'README.md')
+        if not os.path.exists(rp):
+            continue
+        comp = {'name': d, 'summary': '', 'sections': {}, 'tokens_used': [], 'preview': None}
+        label, buf = None, []
+        def flush():
+            if label:
+                comp['sections'][label] = ' '.join(buf).strip()
+        for l in open(rp, encoding='utf-8', errors='ignore').read().split('\n'):
+            if l.startswith('# '):
+                comp['name'] = l[2:].strip(); continue
+            m = re.match(r'\*\*([^*]+?)\.?\*\*\.?\s*(.*)', l)
+            if m:
+                flush(); label = re.sub(r'[^a-z0-9]+', '_', m.group(1).lower()).strip('_'); buf = [m.group(2)]; continue
+            if not l.strip():
+                flush(); label = None; buf = []; continue
+            if label: buf.append(l.strip())
+            elif not comp['summary']: comp['summary'] = l.strip()
+        flush()
+        text = ' '.join([comp['summary']] + list(comp['sections'].values()))
+        comp['tokens_used'] = sorted(n for n in names if re.search(r'(?<![\w-])' + re.escape(n) + r'(?![\w-])', text))
+        if os.path.exists(os.path.join(base, d, 'preview.html')):
+            comp['preview'] = 'components/%s/preview.html' % d
+        for key in ('states', 'variants', 'sizes'):
+            if key in comp['sections']:
+                comp[key] = [x.strip(' .') for x in re.split(r',|;| and ', comp['sections'][key]) if x.strip()]
+        out.append(comp)
+    return out
+
+def build_style_dictionary(t):
+    """Design Tokens (DTCG) JSON that Style Dictionary and Figma token plugins read. Dark values go in $extensions.mode.dark."""
+    def tok(v, typ, desc, dark=None):
+        d = {'$value': v, '$type': typ, '$description': desc or ''}
+        if dark: d['$extensions'] = {'mode': {'dark': dark}}
+        return d
+    out = {'color': {}, 'spacing': {}, 'radius': {}, 'shadow': {}, 'z-index': {}, 'font': {'family': {}, 'size': {}}}
+    for c in (t.get('color') or {}).get('tokens', []):
+        v = c['value']; light = val(v, 'light'); dark = v.get('dark') if isinstance(v, dict) else None
+        out['color'][slug(c['name'])] = tok(light, 'color', c.get('usage'), dark if dark and dark != light else None)
+    for key, grp, typ in (('spacing', 'spacing', 'dimension'), ('radius', 'radius', 'dimension'), ('shadow', 'shadow', 'string'), ('zindex', 'z-index', 'number')):
+        for x in (t.get(key) or {}).get('tokens', []):
+            v = x['value']
+            if typ == 'number':
+                try: v = int(v)
+                except (TypeError, ValueError): pass
+            out[grp][slug(x['name'])] = tok(v, typ, x.get('usage'))
+    for k, f in ((t.get('type') or {}).get('families') or {}).items():
+        out['font']['family'][slug(k)] = tok(f, 'fontFamily', '')
+    for g in (t.get('type') or {}).get('groups', []):
+        for s in g.get('styles', []):
+            out['font']['size'][slug(s['name'])] = tok(s.get('fontSize'), 'dimension', s.get('usage'))
+    return out
+
 def find_chrome():
     for p in ('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'):
         if os.path.exists(p): return p
@@ -188,7 +253,7 @@ def find_chrome():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('tokens')
-    ap.add_argument('--format', required=True, choices=['html', 'pdf', 'css', 'tailwind', 'agents'])
+    ap.add_argument('--format', required=True, choices=['html', 'pdf', 'css', 'tailwind', 'agents', 'components', 'style-dictionary'])
     ap.add_argument('--docs')
     ap.add_argument('--out')
     ap.add_argument('--title')
@@ -207,10 +272,12 @@ def main():
         for n in files:
             docs.append((n, open(os.path.join(a.docs, n), encoding='utf-8', errors='ignore').read()))
     f = a.format
-    out = a.out or ('design-system.' + {'html': 'html', 'pdf': 'pdf', 'css': 'css', 'tailwind': 'tailwind.config.js', 'agents': 'AGENTS.md'}[f])
+    out = a.out or ('design-system.' + {'html': 'html', 'pdf': 'pdf', 'css': 'css', 'tailwind': 'tailwind.config.js', 'agents': 'AGENTS.md', 'components': 'components.json', 'style-dictionary': 'tokens.dtcg.json'}[f])
     if f == 'css': open(out, 'w').write(build_css(t))
     elif f == 'tailwind': open(out, 'w').write(build_tailwind(t))
     elif f == 'agents': open(out, 'w').write(build_agents(t, title))
+    elif f == 'style-dictionary': open(out, 'w').write(json.dumps(build_style_dictionary(t), indent=2))
+    elif f == 'components': open(out, 'w').write(json.dumps(build_components(a.docs, t), indent=2))
     else:
         h = build_html(t, docs, title)
         if f == 'html':

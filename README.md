@@ -12,6 +12,8 @@ A Claude skill that pulls a design system out of a real project, decides what is
    - a PDF or a single print-ready HTML page,
    - CSS variables and a Tailwind config,
    - an `AGENTS.md` of always-on rules for AI agents.
+   - for engineers, `components.json` (one structured record per component) and `tokens.dtcg.json` (Design Tokens format for Style Dictionary and Figma token tools).
+6. **Keeps it in step** (`scripts/check_drift.py`). Compare the saved tokens with the code of several sources (a prototype and the real app), list the differences, link each token to the code variable that holds it, and exit with an error on drift (`--fail`) so it can run before a release.
 
 ## Install
 
@@ -28,5 +30,6 @@ Upload `design-system-keeper.skill` to Claude (Settings, Skills), or copy this f
 
 - The coverage score is keyword-based. Treat it as a guide, not a grade. A scan-only draft is flagged as a draft.
 - Colours written as Tailwind classes (for example `bg-emerald-600`) are not read. Dark values in a draft are listed separately, not paired with light ones.
-- It does not generate per-component JSON yet.
+- `components.json` is read from component pages written as a title, a summary and labelled paragraphs (`**Use.**`, `**Rules.**`). Pages written another way give thinner data.
+- The drift check compares colours by name and value. It does not yet compare shadows, spacing names or component code.
 - Tested on three projects (a design system with 17 components, a portfolio site and a Next.js app) and in two fresh sessions, and the tests found errors that were fixed. It is not tested on every setup.

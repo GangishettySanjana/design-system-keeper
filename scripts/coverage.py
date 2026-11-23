@@ -46,9 +46,9 @@ def main():
     zi = (t.get('zindex') or {}).get('tokens', [])
     alltok = ctoks + sp + rd + sh + zi + [s for g in groups for s in g.get('styles', [])]
     with_use = [x for x in alltok if x.get('usage')]
-    with_code = [x for x in alltok if 'code:' in str(x.get('usage', '')).lower()]
+    with_code = [x for x in alltok if 'code:' in str(x.get('usage', '')).lower() or x.get('code')]
     comp_dirs = [n for n in names if n.lower().startswith('components/') and n.lower().endswith('readme.md')]
-    comp_json = [n for n in names if n.lower().startswith('components/') and n.lower().endswith('.json')]
+    comp_json = [n for n in names if (n.lower().startswith('components/') and n.lower().endswith('.json')) or os.path.basename(n).lower() == 'components.json']
     S = lambda ok, part=None: 'Found' if ok else ('Partly' if part else 'Missing')
 
     rows = []
@@ -104,7 +104,7 @@ def main():
     add('Governance', 'Versioning and deprecation', S(len(h) >= 1), 'mentioned: ' + ', '.join(h) if h else 'nothing found')
     # AI readiness
     add('AI readiness', 'Machine-readable tokens', S(len(alltok) > 0), 'tokens.json with names, values and usage notes' if alltok else 'none')
-    add('AI readiness', 'Machine-readable component data (JSON per component)', 'Found' if len(comp_json) >= max(1, ncomp // 2) and comp_json else ('Partly' if comp_json else 'Missing'), f'{len(comp_json)} component JSON files')
+    add('AI readiness', 'Machine-readable component data (JSON per component)', 'Found' if (any(os.path.basename(n).lower() == 'components.json' for n in comp_json) or (comp_json and len(comp_json) >= max(1, ncomp // 2))) else ('Partly' if comp_json else 'Missing'), f'{len(comp_json)} component JSON files')
     h = [n for n in names if 'agents' in n.lower() or 'for-ai' in n.lower() or 'for_ai' in n.lower()]
     add('AI readiness', 'Always-on rules for AI agents (AGENTS.md or similar)', S(h), ', '.join(h) if h else 'no AGENTS.md or "for AI" page')
     pairs = sum(1 for x in alltok if re.search(r'[A-Z ]', str(x.get('name', ''))))
