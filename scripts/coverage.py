@@ -124,6 +124,7 @@ def main():
             g = r['group']; print(f'\n## {g}')
         mark = {'Found': '[x]', 'Partly': '[~]', 'Missing': '[ ]'}[r['status']]
         print(f'- {mark} {r["item"]}: {r["status"]}. {r["evidence"]}')
+    print('\nNote: these checks are keyword-based. A word in a document counts as a mention, so read the evidence on each line and treat the score as a guide, not a grade.')
     if a.out:
         json.dump({'score': score, 'max': mx, 'rows': rows}, open(a.out, 'w'), indent=1)
 

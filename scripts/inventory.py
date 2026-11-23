@@ -53,6 +53,26 @@ def px(v):
 TW_RADIUS = {'rounded-none': '0px', 'rounded-sm': '2px', 'rounded': '4px', 'rounded-md': '6px', 'rounded-lg': '8px', 'rounded-xl': '12px', 'rounded-2xl': '16px', 'rounded-3xl': '24px', 'rounded-full': '999px'}
 TW_TEXT = {'xs': '12px', 'sm': '14px', 'base': '16px', 'lg': '18px', 'xl': '20px', '2xl': '24px', '3xl': '30px', '4xl': '36px', '5xl': '48px', '6xl': '60px', '7xl': '72px', '8xl': '96px', '9xl': '128px'}
 
+THEME_VARS = {}
+
+def theme_vars(css):
+    """(variable, 'light' or 'dark', hex) for every colour custom property, using the block it sits in.
+    A block counts as dark when its selector or an enclosing @media mentions dark (.dark, [data-theme=dark], prefers-color-scheme: dark)."""
+    out, stack, buf = [], [], ''
+    for ch in css:
+        if ch == '{':
+            stack.append(buf.strip()); buf = ''
+        elif ch == '}':
+            if stack:
+                sel = stack.pop()
+                dark = any(re.search(r'dark|prefers-color-scheme:\s*dark', s, re.I) for s in stack + [sel])
+                for k, v in re.findall(r'(--[A-Za-z0-9_-]+)\s*:\s*(#[0-9a-fA-F]{3,6})\b', buf):
+                    out.append((k, 'dark' if dark else 'light', v))
+            buf = ''
+        else:
+            buf += ch
+    return out
+
 def scan(roots):
     C = {k: collections.Counter() for k in ['color', 'radius', 'font-size', 'font-family', 'spacing', 'shadow', 'z-index', 'transition', 'keyframes', 'custom-property', 'class']}
     n = 0
@@ -65,6 +85,8 @@ def scan(roots):
         n += 1
         exts[os.path.splitext(p)[1].lower()] += 1
         css = ''.join(re.findall(r'<style[^>]*>(.*?)</style>', s, flags=re.S)) if p.lower().endswith(('.html', '.htm', '.vue', '.svelte')) else s
+        for _v, _th, _hx in theme_vars(css):
+            THEME_VARS.setdefault(_v, {})[_th] = norm_hex(_hx)
         for h in re.findall(r'#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b', css):
             C['color'][norm_hex(h)] += 1
         for v in re.findall(r'border-radius:\s*([0-9.]+(?:px|rem|%))', css):
@@ -156,9 +178,15 @@ def draft_tokens(C, roots, variables):
         while n in used_names:
             n = f'{base}-{i}'; i += 1
         used_names.add(n); return n
-    colors = []
+    colors, used_hex = [], set()
+    for var, th in sorted(THEME_VARS.items()):
+        if th.get('light') and th.get('dark') and th['light'] != th['dark']:
+            colors.append({'name': uniq(var.lstrip('-')), 'value': {'light': th['light'].upper(), 'dark': th['dark'].upper()}, 'usage': f'Code: `{var}`. Light and dark values read from the code. Not yet confirmed by a person.'})
+            used_hex.update([th['light'], th['dark']])
+    paired = len(colors)
     for h, c in C['color'].most_common():
-        if c < thr or len(colors) >= cap: break
+        if c < thr or len(colors) >= cap + paired: break
+        if h in used_hex: continue
         name = uniq(var_name.get(h) or 'color-' + h[1:])
         colors.append({'name': name, 'value': h.upper(), 'usage': f'Used {c} times in the scan. Source: code. Not yet confirmed by a person.'})
     fams = [f for f, _ in C['font-family'].most_common() if not f.startswith(('var(', 'inherit', '-apple', 'system-ui', 'sans-serif', 'serif', 'monospace', 'ui-'))][:3]
@@ -172,7 +200,7 @@ def draft_tokens(C, roots, variables):
     return {
         'name': os.path.basename(os.path.abspath(roots[0])) + ' (draft)',
         'version': 0,
-        'color': {'themes': [{'id': 'light', 'name': 'Light'}], 'tokens': colors},
+        'color': {'themes': [{'id': 'light', 'name': 'Light'}] + ([{'id': 'dark', 'name': 'Dark'}] if paired else []), 'tokens': colors},
         'type': {'fonts': [], 'families': {('serif' if i == 1 else 'sans' if i == 0 else 'accent'): f for i, f in enumerate(fams)}, 'groups': [{'name': 'Text', 'family': 'sans', 'styles': styles}]},
         'spacing': {'note': 'Drafted from a scan: the values the code uses most.', 'tokens': [{'name': 'space-' + s[:-2], 'value': s, 'usage': f'Used {c} times in the scan.'} for s, c in sp]},
         'radius': {'note': 'Drafted from a scan.', 'tokens': [{'name': 'radius-' + s.replace('%', 'pct').replace('px', ''), 'value': s, 'usage': f'Used {c} times in the scan.'} for s, c in rd]},

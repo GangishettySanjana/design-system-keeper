@@ -38,3 +38,22 @@ Keep the same folder layout in the project (for example `design-system/`), and t
 - Invent a value, a name, or a person's decision.
 - Put keys, tokens, real emails or real people's data in the system.
 - Delete a token or rule. Mark it replaced and keep it.
+
+
+## Component page format (what `export_system.py --format components` reads)
+
+Each component lives at `components/<Name>/README.md` (and, for artifacts, `preview.html`). Write it as:
+
+```
+# Name
+One line that says what the component is.
+
+**Use.** When to use it, in one paragraph.
+**Rules.** The hard rules, each with a reason.
+**States.** default, hover, disabled, loading   (comma separated)
+**Variants.** primary, quiet
+**Sizes.** regular, compact
+**Website.** What changes on the website (any label works).
+```
+
+Each `**Label.** text` starts a paragraph on one line; a blank line ends it. The export turns every label into a field, lists `states`, `variants` and `sizes` as arrays, and records which token names the page mentions.

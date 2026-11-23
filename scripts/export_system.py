@@ -10,6 +10,8 @@ Usage:
   css       CSS custom properties, with a dark-theme block when the tokens have dark values.
   tailwind  a tailwind.config theme.extend snippet that points at the CSS variables.
   agents    an AGENTS.md of always-on rules for AI agents: the tokens, what each is for, and how to use them.
+  bridge    bridge.css: points the app's own variable names at the tokens (needs linked-tokens.json from check_drift.py --write-names, and --source <label>).
+            Add --prefix ds- to css/tailwind/bridge so token names never clash with the app. --rules rules.md adds project rules to the agents file.
   components  components.json: one structured record per component (summary, use, rules, states, tokens used), read from <docs>/components/*/README.md.
   style-dictionary  tokens.dtcg.json: design tokens in the DTCG format that Style Dictionary and Figma token tools read (dark values in $extensions.mode.dark).
 
@@ -56,7 +58,7 @@ def build_tailwind(t):
     def m(items, prefix='', key='name'):
         return ',\n      '.join(f"'{slug(i[key]).replace(prefix, '', 1) if prefix else slug(i[key])}': 'var(--{prefix}{slug(i[key]).replace(prefix, '', 1) if prefix else slug(i[key])})'" for i in items)
     colors = ',\n      '.join(f"'{slug(c['name'])}': 'var(--color-{slug(c['name'])})'" for c in (t.get('color') or {}).get('tokens', []))
-    spacing = ',\n      '.join(f"'{slug(s['name']).replace('space-', '')}': 'var(--{slug(s['name'])})'" for s in (t.get('spacing') or {}).get('tokens', []))
+    spacing = ',\n      '.join(f"'{slug(s['name'])}': 'var(--{slug(s['name'])})'" for s in (t.get('spacing') or {}).get('tokens', []))
     radius = ',\n      '.join(f"'{slug(r['name']).replace('radius-', '')}': 'var(--{slug(r['name'])})'" for r in (t.get('radius') or {}).get('tokens', []))
     shadow = ',\n      '.join(f"'{slug(s['name']).replace('shadow-', '')}': 'var(--{slug(s['name'])})'" for s in (t.get('shadow') or {}).get('tokens', []))
     fams = ',\n      '.join(f"'{slug(k)}': ['var(--font-{slug(k)})']" for k in ((t.get('type') or {}).get('families') or {}))
@@ -65,7 +67,18 @@ def build_tailwind(t):
             f'    colors: {{\n      {colors}\n    }},\n    spacing: {{\n      {spacing}\n    }},\n    borderRadius: {{\n      {radius}\n    }},\n'
             f'    boxShadow: {{\n      {shadow}\n    }},\n    fontFamily: {{\n      {fams}\n    }},\n    }},\n  }},\n}};\n')
 
-def build_agents(t, title):
+def build_bridge(t, source, pfx=''):
+    """CSS that points the app's own variable names at the tokens. Only variables that share a token's name AND already hold its value are bridged."""
+    lines = ["/* Bridge: the app's own variable names point at the design system tokens. Load it AFTER the tokens CSS.", "   Only variables that share a token's name and already hold its value are bridged, so the app looks the same. */", ':root {']
+    n = 0
+    for c in (t.get('color') or {}).get('tokens', []):
+        for name in (c.get('code_exact') or {}).get(source, []):
+            lines.append(f'  {name}: var(--{pfx}color-{slug(c["name"])});'); n += 1
+    lines.append('}')
+    if n == 0: lines.insert(2, '/* Nothing to bridge: run check_drift.py with --write-names first, and give the source label. */')
+    return '\n'.join(lines) + '\n'
+
+def build_agents(t, title, rules=''):
     L = [f'# {title}: design rules for AI agents', '',
          'Always follow these rules when you build or change any screen. Use the tokens below by name. Never invent a colour, size, radius or spacing value that is not listed. If you need one, say so and ask a person.', '']
     ct = (t.get('color') or {}).get('tokens', [])
@@ -90,7 +103,10 @@ def build_agents(t, title):
             for s in g.get('styles', []):
                 L.append(f'- `{s["name"]}`: {s.get("fontSize")}, weight {s.get("fontWeight", 400)}. {s.get("usage", "")}')
         L.append('')
-    L += ['## Before you finish', '', '- Every value you used is a token above.', '- Text contrast is at least 4.5:1 in every theme.', '- Tap targets are at least 44px.', '- If the product and these rules disagree, do not guess: tell the person.', '']
+    if rules.strip():
+        L += ['## Project-specific rules', '', rules.strip(), '']
+    has44 = any(str(x.get('value')) == '44px' for x in (t.get('spacing') or {}).get('tokens', []))
+    L += ['## Before you finish', '', '- Every value you used is a token above.', '- Text contrast is at least 4.5:1 in every theme.'] + (['- Tap targets are at least 44px.'] if has44 else []) + ['- If the product and these rules disagree, do not guess: tell the person.', '']
     return '\n'.join(L)
 
 def md_to_html(md):
@@ -253,10 +269,13 @@ def find_chrome():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('tokens')
-    ap.add_argument('--format', required=True, choices=['html', 'pdf', 'css', 'tailwind', 'agents', 'components', 'style-dictionary'])
+    ap.add_argument('--format', required=True, choices=['html', 'pdf', 'css', 'tailwind', 'agents', 'components', 'style-dictionary', 'bridge'])
     ap.add_argument('--docs')
     ap.add_argument('--out')
     ap.add_argument('--title')
+    ap.add_argument('--prefix', default='', help='prefix for CSS variable names, for example ds- gives --ds-color-ink, so they never clash with the app')
+    ap.add_argument('--source', help='for --format bridge: the source label used with check_drift.py (for example app)')
+    ap.add_argument('--rules', help='for --format agents: a markdown file of project-specific rules to add')
     a = ap.parse_args()
     t = json.load(open(a.tokens))
     title = a.title or t.get('name') or 'Design system'
@@ -272,10 +291,17 @@ def main():
         for n in files:
             docs.append((n, open(os.path.join(a.docs, n), encoding='utf-8', errors='ignore').read()))
     f = a.format
-    out = a.out or ('design-system.' + {'html': 'html', 'pdf': 'pdf', 'css': 'css', 'tailwind': 'tailwind.config.js', 'agents': 'AGENTS.md', 'components': 'components.json', 'style-dictionary': 'tokens.dtcg.json'}[f])
-    if f == 'css': open(out, 'w').write(build_css(t))
-    elif f == 'tailwind': open(out, 'w').write(build_tailwind(t))
-    elif f == 'agents': open(out, 'w').write(build_agents(t, title))
+    out = a.out or ('design-system.' + {'html': 'html', 'pdf': 'pdf', 'css': 'css', 'tailwind': 'tailwind.config.js', 'agents': 'AGENTS.md', 'components': 'components.json', 'style-dictionary': 'tokens.dtcg.json', 'bridge': 'bridge.css'}[f])
+    pfx = a.prefix or ''
+    def pre(s):
+        return re.sub(r'(?m)^(\s+)--', lambda m: m.group(1) + '--' + pfx, s) if pfx else s
+    if f == 'css': open(out, 'w').write(pre(build_css(t)))
+    elif f == 'bridge': open(out, 'w').write(build_bridge(t, a.source or '', pfx))
+    elif f == 'tailwind':
+        tw = build_tailwind(t)
+        tw = re.sub(r'    \w+: \{\n      \n    \},\n', '', tw)
+        open(out, 'w').write(tw.replace('var(--', 'var(--' + pfx) if pfx else tw)
+    elif f == 'agents': open(out, 'w').write(build_agents(t, title, open(a.rules).read() if a.rules else ''))
     elif f == 'style-dictionary': open(out, 'w').write(json.dumps(build_style_dictionary(t), indent=2))
     elif f == 'components': open(out, 'w').write(json.dumps(build_components(a.docs, t), indent=2))
     else:
