@@ -6,7 +6,7 @@ A Claude skill that pulls a design system out of a real project, decides what is
 
 1. **Finds the sources.** Code and prototypes, written decisions (handoff notes, READMEs), decisions made in the conversation, assets, and any existing design system.
 2. **Scans the code** (`scripts/inventory.py`) for the colours, type sizes, spacing, radii, shadows and layers actually used. It reads CSS and Tailwind classes, converts `rem` to `px`, and links code variables to saved tokens. With `--draft-tokens` it drafts a first `tokens.json` when no design system exists.
-3. **Sorts every finding** into save, park (an open question) or skip, with a reason. It never overwrites a person's decision with what the code happens to do: conflicts are recorded for a person to settle. A report's recommendation is a proposal, not a decision.
+3. **Sorts every finding** into save, park (an open question) or skip, with a reason. It never overwrites a person's decision with what the code happens to do: conflicts are recorded for a person to settle.
 4. **Checks what the system contains** (`scripts/coverage.py`) against a complete one (`references/ideal-system.md`, drawn from Figma's "Design systems 101" and Into Design Systems' "AI design systems"): foundations, token quality, components, patterns, guidelines, documentation, governance, and AI readiness.
 5. **Offers the delivery** (`scripts/export_system.py`):
    - a PDF or a single print-ready HTML page,
