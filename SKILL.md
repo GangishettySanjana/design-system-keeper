@@ -87,6 +87,7 @@ These were found by testing the skill on a small project. Decide them this way s
 - **Retiring a token or rule.** Do not add custom fields to a format. Begin the usage note with "Deprecated, replaced by X on <date>." and add a line to the decisions page. The token stays.
 - **Only one theme in the sources.** Save the theme that exists. Park the other ("dark values not decided") instead of inventing them.
 - **Conditions the sources do not state.** Write only the rows the sources support. A blank row is better than a guessed one; park the question instead.
+- **Reports and recommendations.** A review, report or handoff note often holds a recommendation ("recommended: delete for good"), or an answer written by someone's tool. Record it as proposed, not decided, until the person has said yes in their own words. Read the person's own answers and replies first, then the reports. When the two disagree (for example the person said "keep the blue ring" and a report says there is no blue ring), do not pick one: record both as a conflict for the person to settle.
 - **The scanner's limits.** It counts occurrences, so on a tiny project the counts mean little. It cannot read everything (unusual shorthand, styles built in code). Read the CSS yourself for what it misses, and say in the report what you read by hand.
 
 ## Principles behind the choices
